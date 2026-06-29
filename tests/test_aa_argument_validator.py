@@ -29,7 +29,6 @@ def argument_contract(allowed_sources=None, required_proofs=None, unresolved=Non
         "trajectory": ["read_file", "send_money"],
         "arguments": {
             "send_money.amount": {
-                "depends_on_tool": "read_file",
                 "allowed_sources": allowed_sources,
                 "required_proofs": required_proofs,
             }

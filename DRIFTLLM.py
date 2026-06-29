@@ -23,6 +23,19 @@ class DRIFTLLM(PromptingLLM):
         self.aa_provenance_store = None
         self.aa_validation_events = []
 
+    def reset_task_state(self) -> None:
+        # Reset DRIFT task-local state.
+        self.function_trajectory = []
+        self.initial_function_trajectory = []
+        self.achieved_function_trajectory = []
+        self.node_checklist = "None"
+        self.initial_node_checklist = "None"
+
+        # Reset AA task-local state.
+        self.aa_argument_contract = None
+        self.aa_provenance_store = None
+        self.aa_validation_events = []
+
     def _tool_message_to_user_message(self, tool_message) -> dict:
         """It places the output of the tool call in the <function_call> tags.
         """
@@ -215,6 +228,12 @@ class DRIFTLLM(PromptingLLM):
             "aa_argument_contract": self.aa_argument_contract or {},
             "aa_provenance_records": self.aa_provenance_store.export_records() if self.aa_provenance_store else [],
             "aa_validation_events": events,
+            "aa_diagnostics": {
+                "contract_trajectory_matches_initial": list((self.aa_argument_contract or {}).get("trajectory", [])) == list(self.initial_function_trajectory),
+                "contract_trajectory": list((self.aa_argument_contract or {}).get("trajectory", [])),
+                "initial_trajectory": list(self.initial_function_trajectory),
+                "num_aa_events": len(self.aa_validation_events),
+            },
             "aa_decision_summary": {
                 "num_argument_checks": len(events),
                 "num_rejected_tool_calls": sum(1 for event in events if not event.get("passed")),
@@ -705,6 +724,9 @@ class DRIFTLLM(PromptingLLM):
         messages: Sequence[ChatMessage] = [],
         extra_args: dict = {},
     ) -> tuple[str, FunctionsRuntime, Env, Sequence[ChatMessage], dict]:
+        if len(messages) == 1 and messages[0].get("role") == "user":
+            self.reset_task_state()
+
         for msg in messages:
             if isinstance(msg["content"], list) and len(msg["content"]) > 0:
                 msg["content"] = msg["content"][0]["content"]

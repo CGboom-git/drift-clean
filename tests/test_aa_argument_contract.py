@@ -36,12 +36,11 @@ def sample_global_contract():
     }
 
 
-def test_contract_with_depends_on_tool_passes():
+def test_contract_without_depends_on_tool_passes():
     contract = {
         "trajectory": ["read_file", "send_money"],
         "arguments": {
             "send_money.amount": {
-                "depends_on_tool": "read_file",
                 "allowed_sources": ["read_file.output.amount"],
                 "required_proofs": ["structured_extraction"],
             }
@@ -55,30 +54,11 @@ def test_contract_with_depends_on_tool_passes():
     assert reason == ""
 
 
-def test_missing_depends_on_tool_fails():
+def test_source_outside_trajectory_fails():
     contract = {
         "trajectory": ["read_file", "send_money"],
         "arguments": {
             "send_money.amount": {
-                "allowed_sources": ["read_file.output.amount"],
-                "required_proofs": ["structured_extraction"],
-            }
-        },
-        "unresolved": [],
-    }
-
-    ok, reason = validate_argument_contract(contract, ["read_file", "send_money"], sample_global_contract())
-
-    assert ok is False
-    assert reason.startswith("missing_depends_on_tool")
-
-
-def test_source_must_match_depends_on_tool():
-    contract = {
-        "trajectory": ["read_file", "send_money"],
-        "arguments": {
-            "send_money.amount": {
-                "depends_on_tool": "read_file",
                 "allowed_sources": ["get_most_recent_transactions.output.amount"],
                 "required_proofs": ["structured_extraction"],
             }
@@ -89,51 +69,16 @@ def test_source_must_match_depends_on_tool():
     ok, reason = validate_argument_contract(contract, ["read_file", "send_money"], sample_global_contract())
 
     assert ok is False
-    assert reason.startswith("allowed_source_not_from_dependency")
+    assert reason.startswith("source_tool_outside_trajectory")
 
 
-def test_user_dependency_must_use_user_explicit():
-    valid_contract = {
-        "trajectory": ["read_file", "send_money"],
-        "arguments": {
-            "send_money.amount": {
-                "depends_on_tool": "user",
-                "allowed_sources": ["user.explicit.amount"],
-                "required_proofs": ["user_explicit"],
-            }
-        },
-        "unresolved": [],
-    }
-    invalid_contract = {
-        "trajectory": ["read_file", "send_money"],
-        "arguments": {
-            "send_money.amount": {
-                "depends_on_tool": "user",
-                "allowed_sources": ["read_file.output.amount"],
-                "required_proofs": ["user_explicit"],
-            }
-        },
-        "unresolved": [],
-    }
-
-    ok, reason = validate_argument_contract(valid_contract, ["read_file", "send_money"], sample_global_contract())
-    assert ok is True
-    assert reason == ""
-
-    ok, reason = validate_argument_contract(invalid_contract, ["read_file", "send_money"], sample_global_contract())
-    assert ok is False
-    assert reason.startswith("user_dependency_bad_source")
-
-
-def test_global_policy_fields_are_rejected():
+def test_required_proof_not_allowed_fails():
     contract = {
         "trajectory": ["read_file", "send_money"],
         "arguments": {
             "send_money.amount": {
-                "depends_on_tool": "read_file",
                 "allowed_sources": ["read_file.output.amount"],
-                "required_proofs": ["structured_extraction"],
-                "role": "control",
+                "required_proofs": ["trusted_tool_derivation"],
             }
         },
         "unresolved": [],
@@ -142,7 +87,44 @@ def test_global_policy_fields_are_rejected():
     ok, reason = validate_argument_contract(contract, ["read_file", "send_money"], sample_global_contract())
 
     assert ok is False
-    assert reason.startswith("global_policy_field_in_task_contract")
+    assert reason.startswith("required_proof_not_allowed")
+
+
+def test_resolved_and_unresolved_same_sink_fails():
+    contract = {
+        "trajectory": ["read_file", "send_money"],
+        "arguments": {
+            "send_money.amount": {
+                "allowed_sources": ["read_file.output.amount"],
+                "required_proofs": ["structured_extraction"],
+            }
+        },
+        "unresolved": [{"sink": "send_money.amount", "reason": "uncertain"}],
+    }
+
+    ok, reason = validate_argument_contract(contract, ["read_file", "send_money"], sample_global_contract())
+
+    assert ok is False
+    assert reason.startswith("sink_both_resolved_and_unresolved")
+
+
+def test_extra_argument_fields_are_rejected():
+    contract = {
+        "trajectory": ["read_file", "send_money"],
+        "arguments": {
+            "send_money.amount": {
+                "depends_on_tool": "read_file",
+                "allowed_sources": ["read_file.output.amount"],
+                "required_proofs": ["structured_extraction"],
+            }
+        },
+        "unresolved": [],
+    }
+
+    ok, reason = validate_argument_contract(contract, ["read_file", "send_money"], sample_global_contract())
+
+    assert ok is False
+    assert reason.startswith("unexpected_argument_spec_field")
 
 
 def test_unresolved_sink_is_accepted():
@@ -158,7 +140,7 @@ def test_unresolved_sink_is_accepted():
     assert reason == ""
 
 
-def test_fallback_includes_user_depends_on_tool_for_explicit_arguments():
+def test_fallback_includes_user_explicit_sources_without_depends_on_tool():
     contract = build_argument_contract(
         client=FailingClient(),
         model="test",
@@ -169,16 +151,15 @@ def test_fallback_includes_user_depends_on_tool_for_explicit_arguments():
     )
 
     spec = contract["arguments"]["send_money.amount"]
-    assert spec["depends_on_tool"] == "user"
+    assert set(spec) == {"allowed_sources", "required_proofs"}
     assert spec["allowed_sources"] == ["user.explicit.amount"]
 
 
-def test_summary_includes_depends_on_tool():
+def test_summary_omits_depends_on_tool():
     contract = {
         "trajectory": ["read_file", "send_money"],
         "arguments": {
             "send_money.amount": {
-                "depends_on_tool": "read_file",
                 "allowed_sources": ["read_file.output.amount"],
                 "required_proofs": ["structured_extraction"],
             }
@@ -188,4 +169,7 @@ def test_summary_includes_depends_on_tool():
 
     summary = summarize_argument_contract(contract)
 
-    assert summary["arguments"]["send_money.amount"]["depends_on_tool"] == "read_file"
+    assert summary["arguments"]["send_money.amount"] == {
+        "allowed_sources": ["read_file.output.amount"],
+        "required_proofs": ["structured_extraction"],
+    }
