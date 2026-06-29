@@ -57,7 +57,11 @@ def validate_action_arguments(
         spec = contract_args[sink]
         allowed = set(spec.get("allowed_sources", []))
         required = set(spec.get("required_proofs", []))
-        provenance = provenance_store.resolve_value(arg_value)
+        provenance = provenance_store.resolve_value(
+            arg_value,
+            allowed_sources=allowed,
+            sink_role=policy.get("role"),
+        )
         actual_sources = set(provenance.get("source_paths", []))
         actual_proofs = set(provenance.get("proofs", []))
         actual_marks = set(provenance.get("marks", []))
@@ -73,6 +77,8 @@ def validate_action_arguments(
             }
         )
 
+        if provenance.get("ambiguous"):
+            return _reject(events, {**event, "reason": "ambiguous_provenance"})
         if not actual_sources or "model.generated" in actual_sources:
             return _reject(events, {**event, "reason": "missing_provenance"})
         if not actual_sources.issubset(allowed):

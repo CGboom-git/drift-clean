@@ -141,7 +141,7 @@ Rules:
 - Do not infer missing recipients, amounts, dates, participants, channels, file ids, credentials, or destinations.
 - If the authorized source path is uncertain, put the sink into unresolved.
 - required_proofs must be selected from the global policy allowed proofs.
-- Do not output global policy fields such as role, deny_marks, I_min, C_max, declassification, or tool_type.
+- For each argument spec, output only these three fields: `depends_on_tool`, `allowed_sources`, and `required_proofs`. Do not output any other fields.
 - Output JSON only.
 """
 

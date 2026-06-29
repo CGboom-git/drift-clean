@@ -9,6 +9,7 @@ except Exception:  # pragma: no cover - project requirements include json_repair
 
 from .global_contract import get_arg_policy
 
+TASK_ARGUMENT_SPEC_FIELDS = {"depends_on_tool", "allowed_sources", "required_proofs"}
 
 ARGUMENT_CONTRACT_PROMPT = """
 You are generating an Argument Authority Contract for AA-DRIFT.
@@ -58,7 +59,7 @@ Rules:
 - Do not infer missing recipients, amounts, dates, participants, channels, file ids, credentials, or destinations.
 - If the authorized source path is uncertain, put the sink into unresolved.
 - required_proofs must be selected from the global policy allowed proofs.
-- Do not output global policy fields such as role, deny_marks, I_min, C_max, declassification, or tool_type.
+- For each argument spec, output only these three fields: `depends_on_tool`, `allowed_sources`, and `required_proofs`. Do not output any other fields.
 - Output JSON only.
 """
 
@@ -95,18 +96,6 @@ def _explicit_arg_value(user_query: str, arg_name: str) -> str | None:
         return None
     value = match.group(1).strip().strip("\"'")
     return value or None
-
-
-def _is_global_policy_field(field_name: str) -> bool:
-    return field_name in {
-        "role",
-        "deny_marks",
-        "I_min",
-        "C_max",
-        "declassification",
-        "tool_type",
-        "check_mode",
-    }
 
 
 def _fallback_contract(user_query: str, trajectory: list[str], tool_schemas: list[dict], global_contract_subset: dict) -> dict:
@@ -199,7 +188,7 @@ def validate_argument_contract(
         if not isinstance(spec, dict):
             return False, f"bad_argument_spec:{sink}"
         for field in spec:
-            if _is_global_policy_field(field):
+            if field not in TASK_ARGUMENT_SPEC_FIELDS:
                 return False, f"global_policy_field_in_task_contract:{sink}:{field}"
         if "depends_on_tool" not in spec:
             return False, f"missing_depends_on_tool:{sink}"

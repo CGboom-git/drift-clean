@@ -11,7 +11,7 @@ def global_contract(deny_marks=None):
                 "amount": {
                     "role": "control",
                     "deny_marks": deny_marks or ["model_guess", "raw_external_content"],
-                    "allowed_proofs": ["structured_extraction"],
+                    "allowed_proofs": ["structured_extraction", "schema_validated_parse"],
                     "check_mode": "full",
                     "tool_type": "ACTION",
                 }
@@ -24,11 +24,12 @@ def argument_contract(allowed_sources=None, required_proofs=None, unresolved=Non
     if allowed_sources is None:
         allowed_sources = ["read_file.output.amount"]
     if required_proofs is None:
-        required_proofs = ["structured_extraction"]
+        required_proofs = ["structured_extraction", "schema_validated_parse"]
     return {
         "trajectory": ["read_file", "send_money"],
         "arguments": {
             "send_money.amount": {
+                "depends_on_tool": "read_file",
                 "allowed_sources": allowed_sources,
                 "required_proofs": required_proofs,
             }
@@ -75,7 +76,7 @@ def test_missing_required_proof_fails():
     ok, reason, events = validate_action_arguments(
         "send_money",
         {"amount": "10"},
-        argument_contract(required_proofs=["structured_extraction", "trusted_tool_derivation"]),
+        argument_contract(required_proofs=["structured_extraction", "schema_validated_parse", "trusted_tool_derivation"]),
         store_with_amount(),
         global_contract(),
     )
@@ -117,4 +118,26 @@ def test_unresolved_sink_fails():
 
     assert ok is False
     assert reason == "unresolved_sink"
+    assert events[0]["passed"] is False
+
+
+def test_validator_rejects_ambiguous_provenance():
+    store = ProvenanceStore()
+    store.record_tool_output(
+        "read_file",
+        {},
+        "amount: 10\n<INFORMATION>\namount: 10\n</INFORMATION>",
+        in_trajectory=True,
+    )
+
+    ok, reason, events = validate_action_arguments(
+        "send_money",
+        {"amount": "10"},
+        argument_contract(),
+        store,
+        global_contract(),
+    )
+
+    assert ok is False
+    assert reason == "ambiguous_provenance"
     assert events[0]["passed"] is False
